@@ -21,13 +21,13 @@ from . op.uv_functions import QuickRotateUv90Pos, QuickRotateUv90Neg, SeamsFromS
 from . utils.user_prefs import AddonPreferences, OBJECT_OT_addon_prefs_example, MenuPlaceholder, unregister_keymaps, get_enable_legacy_tools
 
 bl_info = {
-    "name": "Interactive Tools",
-    "author": "Maxi Vazquez, Ajfurey",
+    "name": "Gitarooboys Updated Interactive Tools",
+    "author": "Maxi Vazquez, Ajfurey, Gitarooboy",
     "description": "Collection of context sensitive tools",
     "blender": (4, 2, 0),
     "location": "View3D",
-    "version": (1, 5, 0),
-    "tracker_url": "https://github.com/maxivz/interactivetoolsblender/issues",
+    "version": (1, 5, 1),
+    "tracker_url": "https://github.com/gitarooboy/gitarooboys-updated-interactive-tools/issues",
     "wiki_url": "https://maxivz.github.io/interactivetoolsblenderdocs.github.io/",
     "warning": "",
     "category": "Generic"
