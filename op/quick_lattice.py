@@ -128,18 +128,7 @@ class QuickLattice(bpy.types.Operator):
         bpy.data.objects[obj.name].select_set(True)
         bpy.context.view_layer.objects.active = obj
 
-        # Fix for blender 2.90
-        version = bpy.app.version_string[:4]
-
-        try:
-            version = float(version)
-        except ValueError:
-            version = float(version[:-1])
-
-        if version >= 2.90:
-            bpy.ops.object.modifier_apply(modifier="Lattice")
-        else:
-            bpy.ops.object.modifier_apply(apply_as='DATA', modifier="Lattice")
+        bpy.ops.object.modifier_apply(modifier="Lattice")
 
         # Delete vertex group
         vg = obj.vertex_groups.get("lattice_group")

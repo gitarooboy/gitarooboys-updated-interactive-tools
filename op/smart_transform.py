@@ -1,6 +1,7 @@
 import bpy
 from bpy_extras.view3d_utils import region_2d_to_location_3d
 from mathutils import Vector
+from ..utils import compat
 
 
 def mouse_2d_to_3d(context, event):
@@ -20,12 +21,7 @@ class CSMove(bpy.types.Operator):
             if space.type != 'VIEW_3D':
                 continue
             # Make sure active tool is set to select
-            context_override = bpy.context.copy()
-            context_override["space_data"] = area.spaces[0]
-            context_override["area"] = area
-
-            with context.temp_override(**context_override):
-                bpy.ops.wm.tool_set_by_id(name="builtin.select_box")
+            compat.set_select_tool(context, area)
 
             if space.show_gizmo_object_translate:
                 bpy.ops.transform.translate('INVOKE_DEFAULT')
@@ -52,12 +48,7 @@ class CSRotate(bpy.types.Operator):
             if space.type != 'VIEW_3D':
                 continue
             # Make sure active tool is set to select
-            context_override = bpy.context.copy()
-            context_override["space_data"] = area.spaces[0]
-            context_override["area"] = area
-
-            with context.temp_override(**context_override):
-                bpy.ops.wm.tool_set_by_id(name="builtin.select_box")
+            compat.set_select_tool(context, area)
 
             if space.show_gizmo_object_rotate:
                 bpy.ops.transform.rotate('INVOKE_DEFAULT')
@@ -78,19 +69,12 @@ class CSScale(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def smart_scale(self, context):
-        areas = bpy.context.workspace.screens[0].areas
-
         area = bpy.context.area
         for space in area.spaces:
             if space.type != 'VIEW_3D':
                 continue
             # Make sure active tool is set to select
-            context_override = bpy.context.copy()
-            context_override["space_data"] = area.spaces[0]
-            context_override["area"] = area
-
-            with context.temp_override(**context_override):
-                bpy.ops.wm.tool_set_by_id(name="builtin.select_box")
+            compat.set_select_tool(context, area)
 
             if space.show_gizmo_object_scale:
                 bpy.ops.transform.resize('INVOKE_DEFAULT')

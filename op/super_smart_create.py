@@ -82,6 +82,13 @@ class SuperSmartCreate(bpy.types.Operator):
                 if get_f2_active():
                     bpy.ops.mesh.f2('INVOKE_DEFAULT')
 
+                else:
+                    # F2 is not enabled, plain Make Edge/Face does the same job
+                    try:
+                        bpy.ops.mesh.edge_face_add()
+                    except RuntimeError:
+                        pass
+
             elif mesh.verts_share_face(selection):
                 self.connect_verts_to_last(selection)
 

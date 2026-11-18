@@ -75,6 +75,7 @@ class QuickAlign(bpy.types.Operator):
 
     raycast = False
     target = ""
+    selected = ()
     
 
     # Get name of the object under the mouse, if nothing is under it will return 'World'
@@ -88,18 +89,17 @@ class QuickAlign(bpy.types.Operator):
 
         view_vector = region_2d_to_vector_3d(region, rv3d, coord)
         ray_origin = region_2d_to_origin_3d(region, rv3d, coord, clamp=20)
-        ray_target = None
-        ray_target = ray_origin + (view_vector * 1000)
-        ray_target.normalized()
 
-        result, location, normal, index, object, matrix = context.scene.ray_cast(context.view_layer.depsgraph,
-                                                                                 ray_origin,
-                                                                                 ray_target)
-        
-        
+        # Scene.ray_cast takes a direction, the old code passed a point (the end
+        # of the ray) so the cast only hit the right thing when the view
+        # origin happened to be close to the world origin.
+        result, location, normal, index, hit_object, matrix = context.scene.ray_cast(context.view_layer.depsgraph,
+                                                                                    ray_origin,
+                                                                                    view_vector.normalized())
+
         if bpy.context.mode == 'OBJECT':
-            if result and not object.select_get():
-                return object.name
+            if result and not hit_object.select_get():
+                return hit_object.name
     
         return 'World'
 

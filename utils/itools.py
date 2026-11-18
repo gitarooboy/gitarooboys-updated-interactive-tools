@@ -41,8 +41,10 @@ def get_mode():
         elif selection_mode[2]:
             return 'FACE'
 
-    if mode == 'EDIT_GPENCIL':
-        return bpy.context.scene.tool_settings.gpencil_selectmode_edit
+    if mode in ('EDIT_GPENCIL', 'EDIT_GREASE_PENCIL'):
+        # Legacy Grease Pencil (EDIT_GPENCIL) was removed in Blender 5.0,
+        # Grease Pencil v3 reports EDIT_GREASE_PENCIL. Both use the same setting.
+        return getattr(bpy.context.scene.tool_settings, 'gpencil_selectmode_edit', mode)
 
     return mode
 
@@ -60,9 +62,41 @@ def set_mode(mode, grow=False):
 
 def get_bmesh():
     if get_mode() in ['VERT', 'EDGE', 'FACE']:
-        return bmesh.from_edit_mesh(bpy.context.edit_object.data)
+        bm = bmesh.from_edit_mesh(bpy.context.edit_object.data)
+
+        # bm.verts[i], bm.edges[i] and bm.faces[i] raise an IndexError when the
+        # lookup tables are out of date. This is a no-op when they are not.
+        bm.verts.ensure_lookup_table()
+        bm.edges.ensure_lookup_table()
+        bm.faces.ensure_lookup_table()
+        return bm
     else:
-        print("Must be in obj mode to get bmesh")
+        print("Must be in edit mode to get bmesh")
+
+
+def refresh_tables(bm=None):
+    """
+    Rebuild element indices and lookup tables without touching the mesh data.
+    Needed before relying on element.index values after topology changes.
+    """
+    if bm is None:
+        bm = get_bmesh()
+
+    bm.verts.index_update()
+    bm.edges.index_update()
+    bm.faces.index_update()
+    bm.verts.ensure_lookup_table()
+    bm.edges.ensure_lookup_table()
+    bm.faces.ensure_lookup_table()
+    return bm
+
+
+def refresh_view():
+    """Flush selection changes made through bmesh so the viewport redraws."""
+    obj = bpy.context.edit_object
+
+    if obj is not None and obj.type == 'MESH':
+        bmesh.update_edit_mesh(obj.data, loop_triangles=False, destructive=False)
 
 
 def to_index(items):
@@ -183,7 +217,7 @@ def select(target, mode='', item=True, replace=False, deselect=False, add_to_his
 
         if item:
             for obj in target:
-                target.select_set(selection_value)
+                obj.select_set(selection_value)
 
         else:
             for obj in target:
@@ -302,23 +336,19 @@ def convert_selection(selection, to):
 
 
 def update_indexes(mode=''):
+    # The old version tested "'VERT' or 'ALL' in mode", which is always true, so
+    # in practice this always refreshed everything. That is kept on purpose:
+    # callers rely on all three tables being valid whatever the current mode is.
     bm = get_bmesh()
-    if not mode:
-        print("Try to get mode")
-        mode = get_mode()
-        print(mode)
 
-    if 'VERT' or 'ALL' in mode:
-        bm.verts.index_update()
-        bm.verts.ensure_lookup_table()
+    bm.verts.index_update()
+    bm.verts.ensure_lookup_table()
 
-    if 'EDGE' or 'ALL' in mode:
-        bm.edges.index_update()
-        bm.edges.ensure_lookup_table()
+    bm.edges.index_update()
+    bm.edges.ensure_lookup_table()
 
-    if 'FACE' or 'ALL' in mode:
-        bm.faces.index_update()
-        bm.faces.ensure_lookup_table()
+    bm.faces.index_update()
+    bm.faces.ensure_lookup_table()
 
     bmesh.update_edit_mesh(bpy.context.edit_object.data)
 

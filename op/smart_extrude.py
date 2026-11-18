@@ -63,7 +63,7 @@ class SmartExtrudeModal(bpy.types.Operator):
             if mode == 'EDGE':
                 selection = itools.get_selected('EDGE', item=True)
                 if all(is_border_edge(edge) for edge in selection):
-                    bpy.ops.mesh.extrude_edges_move(MESH_OT_extrude_edges_indiv=None, TRANSFORM_OT_translate=None)
+                    bpy.ops.mesh.extrude_edges_move(TRANSFORM_OT_translate={"value": (0, 0, 0)})
                 else:
                     return {'FINISHED'}
             else:
@@ -96,7 +96,8 @@ class SmartExtrudeModal(bpy.types.Operator):
         elif event.type in {'RIGHTMOUSE', 'ESC'}:  # Confirm
             bpy.ops.transform.translate(value=(Vector((0, 0, 0)) - self.translation_accumulator),
                                         orient_type='GLOBAL')
-            SmartDelete.smart_delete(context)
+            # SmartDelete was never imported here and smart_delete is not a static method
+            bpy.ops.mesh.smart_delete()
             return {'CANCELLED'}
 
         return {'RUNNING_MODAL'}
@@ -127,7 +128,7 @@ class SmartExtrude(bpy.types.Operator):
             if mode == 'EDGE':
                 selection = itools.get_selected('EDGE', item=True)
                 if all(is_border_edge(edge) for edge in selection):
-                    bpy.ops.mesh.extrude_edges_move(MESH_OT_extrude_edges_indiv=None, TRANSFORM_OT_translate=None)
+                    bpy.ops.mesh.extrude_edges_move(TRANSFORM_OT_translate={"value": (0, 0, 0)})
                 else:
                     return {'FINISHED'}
             else:
@@ -137,8 +138,10 @@ class SmartExtrude(bpy.types.Operator):
                                        TRANSFORM_OT_translate={"value": (0, 0, 0)})
 
 
-        active_tool = bpy.context.workspace.tools.from_space_view3d_mode(bpy.context.mode, create=False).idname
-        areas = bpy.context.workspace.screens[0].areas
+        # from_space_view3d_mode returns None when the mode has no tool entry yet
+        tool = context.workspace.tools.from_space_view3d_mode(context.mode, create=False)
+        active_tool = tool.idname if tool else ''
+        areas = context.window.screen.areas if context.window else context.workspace.screens[0].areas
 
         for area in areas:
             for space in area.spaces:

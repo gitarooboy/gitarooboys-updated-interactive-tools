@@ -3,18 +3,41 @@ import addon_utils
 from bpy.types import Operator, AddonPreferences, Menu
 from bpy.props import StringProperty, IntProperty, BoolProperty, EnumProperty
 from os.path import basename, dirname
-import rna_keymap_ui
+from . import compat
+
+try:
+    import rna_keymap_ui
+except ImportError:
+    rna_keymap_ui = None
 
 
 def addon_installed(addon_name):
     #Thanks machin3 for the help to make this work for 4.2!
-    for mod in addon_utils.modules():
-        name = mod.bl_info["name"]
+    # Extensions in 4.2+ and some broken addons have no (usable) bl_info, which
+    # used to raise at import time and stop the whole addon from loading.
+    try:
+        for mod in addon_utils.modules():
+            bl_info = getattr(mod, "bl_info", None) or {}
 
-        if name == addon_name:
-            return True
+            if bl_info.get("name") == addon_name:
+                return True
+    except Exception as error:
+        print("Interactive Tools: could not look for addon %s: %s" % (addon_name, error))
 
     return False
+
+
+def addon_enabled(module_name):
+    """
+    True if an addon / extension with this module name is enabled. Extensions
+    are registered as bl_ext.<repository>.<module_name>. This only reads the
+    list of enabled addons, so it is cheap enough to call from draw().
+    """
+    try:
+        return any(name == module_name or name.endswith("." + module_name)
+                   for name in bpy.context.preferences.addons.keys())
+    except Exception:
+        return False
 
 
 def add_keymap(function_name, key, modifiers=[], kname='3D View Generic', context='VIEW_3D'):
@@ -47,7 +70,7 @@ def add_keymap(function_name, key, modifiers=[], kname='3D View Generic', contex
 
 def add_hotkey_ui(name, km, kc, row):
     kmi = get_hotkey_entry_item(km, name)
-    if kmi:
+    if kmi and rna_keymap_ui is not None:
         row.context_pointer_set("keymap", km)
         rna_keymap_ui.draw_kmi([], kc, km, kmi, row, 0)
 
@@ -73,20 +96,20 @@ def addon_active_prop(addon_active, addon, row, url='none'):
 
 
 def get_addon_name():
-    name = __package__
-    return name.split(".")[0]
+    # __package__ is "<addon>.utils" for a regular addon install and
+    # "bl_ext.<repository>.<addon>.utils" when installed as an extension. The
+    # preferences id has to be the full package name of the addon, taking the
+    # first part (the old behaviour) gives "bl_ext" for extensions.
+    return __package__.rpartition(".")[0]
 
 
 def get_property(target):
     addon_name = get_addon_name()
     addon = bpy.context.preferences.addons.get(addon_name)
     if addon:
-        prefs = addon.preferences
-        try:
-            value = prefs[target]
-        except:
-            print("Can't Find Value :", target)
-        value = False
+        # prefs[target] (dict style access) does not work for bpy.props
+        # properties in Blender 5.0+, use normal attribute access
+        value = getattr(addon.preferences, target, False)
     else:
         value = False
 
@@ -97,7 +120,7 @@ def get_keymaps_by_key():
     wm = bpy.context.window_manager
     for km in wm.keyconfigs.user.keymaps:
         print("Keymap :", km)
-        for kmi in km:
+        for kmi in km.keymap_items:
             print("Keymap Item :", kmi)
 
 
@@ -122,27 +145,27 @@ def get_hotkey_entry_item(km, kmi_name):
 # Get addon preferences:
 #
 def get_set_flow_active():
-    return set_flow_active
+    return compat.op_exists('mesh.set_edge_flow')
 
 
 def get_f2_active():
-    return f2_active
+    return compat.op_exists('mesh.f2')
 
 
 def get_loop_tools_active():
-    return loop_tools_active
+    return compat.op_exists('mesh.looptools_circle')
 
 
 def get_qblocker_active():
-    return qblocker_active
+    return compat.op_exists('object.box_create')
 
 
 def get_bezierutilities_active():
-    return bezierutilities_active
+    return addon_enabled("blenderbezierutils")
 
 
 def get_textools_active():
-    return textools_active
+    return compat.op_exists('uv.textools_rectify')
 
 
 def get_ssc_switch_modes():
@@ -208,18 +231,11 @@ def get_enable_hotkey_editor():
     return prefs.enable_hotkey_editor
 
 def unregister_keymaps():
-    wm = bpy.context.window_manager
-    kc = wm.keyconfigs.user
-
-    print("Keymaps Disabled")
-    print(len(addon_keymaps))
     for km, kmi in addon_keymaps:
-        print(kmi)
-
-    for km, kmi in addon_keymaps:
-        print(kmi)
-        kc.keymaps.keymap_items.remove(kmi)
-        km.keymap_items.remove(kmi)
+        try:
+            km.keymap_items.remove(kmi)
+        except (RuntimeError, ReferenceError):
+            pass
 
     addon_keymaps.clear()
 
@@ -237,15 +253,6 @@ def get_enable_legacy_tools():
 addon_keymaps = []
 
 
-# Check for integrations:
-f2_active = addon_installed("F2")
-loop_tools_active = addon_installed("LoopTools")
-qblocker_active = addon_installed("QBlocker")
-bezierutilities_active = addon_installed("blenderbezierutils")
-textools_active = addon_installed("TexTools")
-set_flow_active = addon_installed("EdgeFlow")
-
-
 class MenuPlaceholder(bpy.types.Operator):
     bl_idname = "menu.placeholder"
     bl_label = ""
@@ -259,7 +266,6 @@ class MenuPlaceholder(bpy.types.Operator):
 
 class AddonPreferences(AddonPreferences):
     bl_idname = get_addon_name()
-    print("NAME : %s", bl_idname)
 
     # Properties
     cateogries: EnumProperty(name="Categories",
@@ -360,14 +366,14 @@ class AddonPreferences(AddonPreferences):
         row = box.row(align=True)
         row.prop(self, "ssc_switch_modes", toggle=False)
 
-        if qblocker_active:
+        if get_qblocker_active():
             row = box.row(align=True)
             row.prop(self, "ssc_qblocker_integration", toggle=True)
         else:
             row = box.row(align=True)
             row.label(text="Qblocker Integration unavailable, install the addon to enable")
 
-        if bezierutilities_active:
+        if get_bezierutilities_active():
             row = box.row(align=True)
             row.prop(self, "ssc_bezierutilities_integration", toggle=True)
         else:
@@ -445,16 +451,16 @@ class AddonPreferences(AddonPreferences):
         row.label(text="Recommended addons:")
 
         row = box.row(align=True)
-        addon_active_prop(f2_active, "F2", row)
-        addon_active_prop(loop_tools_active, "Loop Tools", row)
-        addon_active_prop(set_flow_active, "Set Flow", row,
+        addon_active_prop(get_f2_active(), "F2", row)
+        addon_active_prop(get_loop_tools_active(), "Loop Tools", row)
+        addon_active_prop(get_set_flow_active(), "Set Flow", row,
                           url='https://github.com/BenjaminSauder/EdgeFlow')
         row = box.row(align=True)
-        addon_active_prop(qblocker_active, "QBlocker", row,
+        addon_active_prop(get_qblocker_active(), "QBlocker", row,
                           url='https://gumroad.com/l/gOEV')
-        addon_active_prop(bezierutilities_active, "Bezier Utilities", row,
+        addon_active_prop(get_bezierutilities_active(), "Bezier Utilities", row,
                           url='https://github.com/Shriinivas/blenderbezierutils')
-        addon_active_prop(bezierutilities_active, "TexTools", row,
+        addon_active_prop(get_textools_active(), "TexTools", row,
                           url='https://github.com/SavMartin/TexTools-Blender')
 
         row = box.row(align=True)
@@ -463,11 +469,6 @@ class AddonPreferences(AddonPreferences):
     def draw_keymaps_disabled(self, context):
         column = context.column()
         layout = column
-
-        # Hotkey setup:
-        wm = bpy.context.window_manager
-        kc = wm.keyconfigs.user
-        km = kc.keymaps['3D View Generic']
 
         row = layout.row(align=True)
         row.label(text="Feature currentlly disabled, to be released in future versions.")

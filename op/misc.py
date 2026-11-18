@@ -1,5 +1,7 @@
 import bpy
+from mathutils import Vector
 from ..utils import itools as itools
+from ..utils import compat
 from .. utils import dictionaries as dic
 from .. utils.user_prefs import get_quickhplp_hp_suffix, get_quickhplp_lp_suffix, get_enable_wireshaded_cs, get_transform_mode_cycle_cyclic
 
@@ -11,19 +13,15 @@ class TransformModeCycle(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        areas = bpy.context.workspace.screens[0].areas
+        screen = context.window.screen if context.window else context.workspace.screens[0]
 
-        for area in areas:
+        for area in screen.areas:
+            if area.type == 'VIEW_3D':
+                # Make sure the active tool is set to select
+                compat.set_select_tool(context, area)
+
             for space in area.spaces:
                 if space.type == 'VIEW_3D':
-                    # Make active tool is set to select
-                    context_override = bpy.context.copy()
-                    context_override["space_data"] = area.spaces[0]
-                    context_override["area"] = area
-
-                    with context.temp_override(**context_override):
-                        bpy.ops.wm.tool_set_by_id( name="builtin.select_box")
-
                     if space.show_gizmo_object_translate:
                         space.show_gizmo_object_translate = False
                         space.show_gizmo_object_rotate = True
@@ -86,24 +84,11 @@ class CSBevel(bpy.types.Operator):
 
         mode = itools.get_mode()
 
-        version = bpy.app.version_string[:4]
-
-        try:
-            version = float(version)
-        except ValueError:
-            version = float(version[:-1])
-
         if mode == 'VERT':
-            if version >= 2.90:
-                bpy.ops.mesh.bevel('INVOKE_DEFAULT', affect='VERTICES')
-            else:
-                bpy.ops.mesh.bevel('INVOKE_DEFAULT', vertex_only=True)
+            bpy.ops.mesh.bevel('INVOKE_DEFAULT', affect='VERTICES')
 
         if mode == 'EDGE':
-            if version >= 2.90:
-                bpy.ops.mesh.bevel('INVOKE_DEFAULT', affect='EDGES')
-            else:
-                bpy.ops.mesh.bevel('INVOKE_DEFAULT', vertex_only=False)
+            bpy.ops.mesh.bevel('INVOKE_DEFAULT', affect='EDGES')
 
         if mode == 'FACE':
             bpy.ops.mesh.inset('INVOKE_DEFAULT')
@@ -157,13 +142,16 @@ class TargetWeldToggle(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def toggle_target_weld(self, context):
-        if context.scene.tool_settings.use_mesh_automerge and bpy.context.scene.tool_settings.use_snap:
-            context.scene.tool_settings.use_mesh_automerge = False
-            bpy.context.scene.tool_settings.use_snap = False
+        tool_settings = context.scene.tool_settings
+
+        if tool_settings.use_mesh_automerge and tool_settings.use_snap:
+            tool_settings.use_mesh_automerge = False
+            tool_settings.use_snap = False
         else:
-            context.scene.tool_settings.snap_elements |= {'VERTEX'}
-            context.scene.tool_settings.use_mesh_automerge = True
-            bpy.context.scene.tool_settings.use_snap = True
+            # snap_elements was split into snap_elements_base / _individual in 4.0
+            compat.set_snap_elements(tool_settings, compat.get_snap_elements(tool_settings) | {'VERTEX'})
+            tool_settings.use_mesh_automerge = True
+            tool_settings.use_snap = True
 
     def execute(self, context):
         self.toggle_target_weld(context)
@@ -354,37 +342,39 @@ class SnapPresetsOp(bpy.types.Operator):
     mode: bpy.props.IntProperty(default=0)
 
     def set_preset(self, context):
-        bpy.context.scene.tool_settings.use_snap_translate = True
-        bpy.context.scene.tool_settings.use_snap_rotate = True
-        bpy.context.scene.tool_settings.use_snap_scale = True
+        ts = context.scene.tool_settings
+
+        compat.ts_set(ts, 'use_snap_translate', True)
+        compat.ts_set(ts, 'use_snap_rotate', True)
+        compat.ts_set(ts, 'use_snap_scale', True)
 
         if self.mode == 1:
-            bpy.context.scene.tool_settings.snap_elements = {'INCREMENT'}
-            bpy.context.scene.tool_settings.snap_target = 'CLOSEST'
-            bpy.context.scene.tool_settings.use_snap_grid_absolute = True
-            bpy.context.scene.tool_settings.use_snap_align_rotation = False
+            compat.set_snap_elements(ts, {'INCREMENT'})
+            compat.ts_set(ts, 'snap_target', 'CLOSEST')
+            compat.ts_set(ts, 'use_snap_grid_absolute', True)
+            compat.ts_set(ts, 'use_snap_align_rotation', False)
 
         elif self.mode == 2:
-            bpy.context.scene.tool_settings.snap_elements = {'VERTEX'}
-            bpy.context.scene.tool_settings.snap_target = 'CENTER'
-            bpy.context.scene.tool_settings.use_snap_align_rotation = False
+            compat.set_snap_elements(ts, {'VERTEX'})
+            compat.ts_set(ts, 'snap_target', 'CENTER')
+            compat.ts_set(ts, 'use_snap_align_rotation', False)
 
         elif self.mode == 3:
-            bpy.context.scene.tool_settings.snap_elements = {'VERTEX'}
-            bpy.context.scene.tool_settings.snap_target = 'CLOSEST'
-            bpy.context.scene.tool_settings.use_snap_align_rotation = False
+            compat.set_snap_elements(ts, {'VERTEX'})
+            compat.ts_set(ts, 'snap_target', 'CLOSEST')
+            compat.ts_set(ts, 'use_snap_align_rotation', False)
 
         elif self.mode == 4:
-            bpy.context.scene.tool_settings.snap_elements = {'FACE'}
-            bpy.context.scene.tool_settings.snap_target = 'CENTER'
-            bpy.context.scene.tool_settings.use_snap_align_rotation = True
-            bpy.context.scene.tool_settings.use_snap_project = True
+            compat.set_snap_elements(ts, {'FACE'})
+            compat.ts_set(ts, 'snap_target', 'CENTER')
+            compat.ts_set(ts, 'use_snap_align_rotation', True)
+            compat.set_snap_project(ts, True)
 
         elif self.mode == 5:
-            bpy.context.scene.tool_settings.snap_elements = {'EDGE_MIDPOINT'}
-            bpy.context.scene.tool_settings.snap_target = 'MEDIAN'
-            bpy.context.scene.tool_settings.use_snap_align_rotation = False
-            bpy.context.scene.tool_settings.use_snap_project = False
+            compat.set_snap_elements(ts, {'EDGE_MIDPOINT'})
+            compat.ts_set(ts, 'snap_target', 'MEDIAN')
+            compat.ts_set(ts, 'use_snap_align_rotation', False)
+            compat.set_snap_project(ts, False)
 
     def execute(self, context):
         self.set_preset(context)
@@ -513,9 +503,12 @@ class FlexiBezierToolsCreate(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        for area in bpy.context.screen.areas:
-            if area.type == "VIEW_3D":
-                bpy.ops.wm.tool_set_by_id(name='flexi_bezier.draw_tool')
+        try:
+            bpy.ops.wm.tool_set_by_id(name='flexi_bezier.draw_tool')
+        except (RuntimeError, TypeError):
+            self.report({'WARNING'}, "Flexi Bezier Tools is not available, enable the Bezier Utilities addon")
+            return {'CANCELLED'}
+
         return{'FINISHED'}
 
 
@@ -567,6 +560,34 @@ class QuickVisualGeoToMesh(bpy.types.Operator):
         return{'FINISHED'}
 
 
+def flatten_to_average_normal():
+    """Project the selected verts onto the plane given by their average normal."""
+    bm = itools.get_bmesh()
+    verts = [vert for vert in bm.verts if vert.select]
+
+    if len(verts) < 2:
+        return
+
+    normal = Vector((0.0, 0.0, 0.0))
+    center = Vector((0.0, 0.0, 0.0))
+
+    for vert in verts:
+        normal += vert.normal
+        center += vert.co
+
+    center /= len(verts)
+
+    if normal.length == 0:
+        return
+
+    normal.normalize()
+
+    for vert in verts:
+        vert.co -= normal * (vert.co - center).dot(normal)
+
+    itools.refresh_view()
+
+
 class QuickFlattenAxis(bpy.types.Operator):
     # Add support for local aligns
 
@@ -584,7 +605,11 @@ class QuickFlattenAxis(bpy.types.Operator):
 
     def execute(self, context):
         if self.mode == 1:
-            bpy.ops.mesh.looptools_flatten()
+            if compat.op_exists('mesh.looptools_flatten'):
+                bpy.ops.mesh.looptools_flatten()
+            else:
+                # LoopTools is not enabled: flatten onto the average normal plane
+                flatten_to_average_normal()
 
         else:
             if self.mode == 2:

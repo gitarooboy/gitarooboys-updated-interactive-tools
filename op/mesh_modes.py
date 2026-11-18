@@ -19,8 +19,12 @@ def quick_selection(target_mode, safe_mode=False):
 
     if current_object != None:
 
+        # Legacy Grease Pencil (GPENCIL) was removed in Blender 5.0,
+        # Grease Pencil v3 objects are GREASEPENCIL
+        is_gpencil = current_object.type in ('GPENCIL', 'GREASEPENCIL')
+
         #Convert types from Mesh to Gpencil space
-        if current_object.type == 'GPENCIL':
+        if is_gpencil:
             if target_mode == 'VERT':
                 target_mode = 'POINT'
             elif target_mode == 'EDGE':
@@ -62,16 +66,16 @@ def quick_selection(target_mode, safe_mode=False):
                 store_sel_data(current_mode)
             itools.set_mode('OBJECT')
 
-        if current_object.type == 'GPENCIL':
-            bpy.ops.object.mode_set(mode="EDIT_GPENCIL")
+        if is_gpencil:
+            # 'EDIT' works for both, EDIT_GPENCIL only existed for the legacy type
+            bpy.ops.object.mode_set(mode='EDIT_GPENCIL' if current_object.type == 'GPENCIL' else 'EDIT')
 
             if current_mode in other_modes:
-                if target_mode == 'POINT':
-                    bpy.context.scene.tool_settings.gpencil_selectmode_edit = 'POINT'
-                elif target_mode == 'STROKE':
-                    bpy.context.scene.tool_settings.gpencil_selectmode_edit = 'STROKE'
-                elif target_mode == 'SEGMENT':
-                    bpy.context.scene.tool_settings.gpencil_selectmode_edit = 'SEGMENT'
+                if target_mode in ('POINT', 'STROKE', 'SEGMENT') and hasattr(bpy.context.scene.tool_settings, 'gpencil_selectmode_edit'):
+                    try:
+                        bpy.context.scene.tool_settings.gpencil_selectmode_edit = target_mode
+                    except TypeError:
+                        pass
 
             elif current_mode == target_mode:
                 bpy.ops.object.mode_set(mode="OBJECT")

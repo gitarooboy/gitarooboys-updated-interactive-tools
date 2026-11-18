@@ -15,7 +15,7 @@ class VIEW3D_MT_object_mode_itools(bpy.types.Menu):
         layout.separator()
         layout.operator("mesh.quick_pivot", text="Quick Origin")
         layout.operator("mesh.simple_edit_pivot", text="Edit Origin")
-        layout.operator("mesh.transform_orientation_pie_pie", text="Quick Transform Orientation")
+        layout.operator("mesh.transform_options_pie", text="Quick Transform Orientation")
         layout.operator('mesh.quick_align', text="Quick Align")
         layout.operator('mesh.quick_lattice', text="Quick Lattice")
         layout.operator('mesh.rebase_cylinder', text="Edit Rebased Cylinder")
@@ -44,7 +44,7 @@ class VIEW3D_MT_edit_mesh_itools(bpy.types.Menu):
 
         layout.separator()
         layout.operator("mesh.quick_pivot", text="Quick Origin")
-        layout.operator("mesh.transform_orientation_pie_pie", text="Quick Transform Orientation")
+        layout.operator("mesh.transform_options_pie", text="Quick Transform Orientation")
         layout.operator('mesh.quick_pipe', text="Quick Pipe")
         layout.operator('mesh.quick_lattice', text="Quick Lattice")
         layout.operator('mesh.rebase_cylinder', text="Rebase Cylinder")
@@ -97,15 +97,36 @@ def menu_edit_uvs_itools(self, context):
     self.layout.separator()
 
 
+# (menu class name, draw function). Menu names can change between Blender
+# versions, a missing one is skipped instead of stopping the addon from loading.
+def _menu_targets():
+    return (
+        ("VIEW3D_MT_object_context_menu", menu_object_mode_itools),
+        ("VIEW3D_MT_edit_mesh_context_menu", menu_edit_mesh_itools),
+        ("VIEW3D_MT_edit_lattice_context_menu", menu_edit_lattice_itools),
+        ("IMAGE_MT_uvs_context_menu", menu_edit_uvs_itools),
+    )
+
+
 def load_menus_itools():
-    bpy.types.VIEW3D_MT_object_context_menu.prepend(menu_object_mode_itools)
-    bpy.types.VIEW3D_MT_edit_mesh_context_menu.prepend(menu_edit_mesh_itools)
-    bpy.types.VIEW3D_MT_edit_lattice_context_menu.prepend(menu_edit_lattice_itools)
-    bpy.types.IMAGE_MT_uvs_context_menu.prepend(menu_edit_uvs_itools)
+    for menu_name, draw_function in _menu_targets():
+        menu = getattr(bpy.types, menu_name, None)
+
+        if menu is None:
+            print("Interactive Tools: menu %s not found, skipping" % menu_name)
+            continue
+
+        menu.prepend(draw_function)
 
 
 def unload_menus_itools():
-    bpy.types.VIEW3D_MT_object_context_menu.remove(menu_object_mode_itools)
-    bpy.types.VIEW3D_MT_edit_mesh_context_menu.remove(menu_edit_mesh_itools)
-    bpy.types.VIEW3D_MT_edit_lattice_context_menu.remove(menu_edit_lattice_itools)
-    bpy.types.IMAGE_MT_uvs_context_menu.remove(menu_edit_uvs_itools)
+    for menu_name, draw_function in _menu_targets():
+        menu = getattr(bpy.types, menu_name, None)
+
+        if menu is None:
+            continue
+
+        try:
+            menu.remove(draw_function)
+        except (ValueError, RuntimeError):
+            pass

@@ -26,7 +26,7 @@ bl_info = {
     "description": "Collection of context sensitive tools",
     "blender": (4, 2, 0),
     "location": "View3D",
-    "version": (1, 4, 1),
+    "version": (1, 5, 0),
     "tracker_url": "https://github.com/maxivz/interactivetoolsblender/issues",
     "wiki_url": "https://maxivz.github.io/interactivetoolsblenderdocs.github.io/",
     "warning": "",
@@ -57,8 +57,14 @@ classes += legacy_classes
 
 def register():
     from bpy.utils import register_class
+
+    # A class that fails to register is reported and skipped instead of
+    # leaving the addon half registered with every tool after it missing.
     for cls in classes:
-        register_class(cls)
+        try:
+            register_class(cls)
+        except Exception as error:
+            print("Interactive Tools: could not register %s: %s" % (cls.__name__, error))
 
     # Load Custom Menus
     load_menus_itools()
@@ -77,7 +83,11 @@ def unregister():
     unload_menus_itools()
 
     for cls in reversed(classes):
-        unregister_class(cls)
+        try:
+            unregister_class(cls)
+        except RuntimeError:
+            # Was never registered (see register)
+            pass
 
 
 if __name__ == "__main__":

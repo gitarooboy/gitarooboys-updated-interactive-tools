@@ -5,10 +5,22 @@ from ..utils import itools as itools
 
 
 def selected_uv_verts_pos():
+    """
+    Positions of the selected UVs.
+
+    BMLoopUV.select was removed in Blender 5.0 (UV selection is stored
+    separately from the UV coordinates now). Nothing in the addon depends on
+    this anymore, so on versions without the attribute it returns an empty list
+    instead of raising.
+    """
     bm = itools.get_bmesh()
     uv_layer = bm.loops.layers.uv.verify()
-    verts_loc = [loop[uv_layer].uv for face in bm.faces for loop in face.loops if loop[uv_layer].select]
-    return verts_loc
+
+    try:
+        return [loop[uv_layer].uv.copy() for face in bm.faces
+                for loop in face.loops if loop[uv_layer].select]
+    except AttributeError:
+        return []
 
 
 def sharp_to_seams(context, selection=[]):
@@ -39,10 +51,9 @@ class QuickRotateUv90Pos(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        original_pos = selected_uv_verts_pos()
-        print(original_pos)
+        # The UV positions used to be read before and after the rotation, but
+        # the result was never used and reading UV selection raises on Blender 5.0+
         bpy.ops.transform.rotate(value=math.radians(90), orient_axis='Z')
-        new_pos = selected_uv_verts_pos()
         return{'FINISHED'}
 
 

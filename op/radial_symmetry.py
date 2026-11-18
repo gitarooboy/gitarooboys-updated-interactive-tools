@@ -89,7 +89,6 @@ class QuickRadialSymmetry(bpy.types.Operator):
     def setup_symmetry(self, context, selection):
         if selection != []:
             sel_pivot = selection.location
-            new_obj = bpy.data.objects.new('new_obj', None)
             bpy.ops.object.empty_add(type='ARROWS', location=sel_pivot)
             self.symmetry_center = bpy.context.active_object
             self.symmetry_center.rotation_euler = (0, 0, math.radians(120))

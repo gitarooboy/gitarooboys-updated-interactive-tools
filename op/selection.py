@@ -6,12 +6,136 @@ import time
 ITERATION_LIMIT = 400
 
 
-def select_face_loops(ring=False):
-    if ring:
-        bpy.ops.mesh.loop_multi_select(ring=True)
+# ---------------------------------------------------------------------------
+# Edge loop / edge ring selection
+#
+# bpy.ops.mesh.loop_multi_select is not available in recent Blender versions
+# (it raises "Calling operator bpy.ops.mesh.loop_multi_select error, could not
+# be found"), so loops and rings are walked directly on the bmesh here. This
+# also means selection no longer depends on an operator that can be renamed or
+# removed again.
+# ---------------------------------------------------------------------------
+def _share_face(edge_a, edge_b):
+    faces_b = edge_b.link_faces
+    return any(face in faces_b for face in edge_a.link_faces)
 
-    else:
-        bpy.ops.mesh.loop_multi_select(ring=False)
+
+def _next_loop_edge(edge, vert):
+    """
+    The edge an edge loop continues on when it leaves `edge` through `vert`,
+    or None when the loop ends there (poles, T junctions, corners).
+    """
+    link_edges = vert.link_edges
+    others = [e for e in link_edges if e != edge]
+    face_count = len(edge.link_faces)
+
+    if face_count == 0:
+        # Loose edges continue through plain two-way vertices
+        if len(link_edges) == 2 and len(others) == 1:
+            return others[0]
+
+    elif face_count == 1:
+        # Boundary edge: follow the border along a regular border vertex
+        # (two border edges and one inner edge). Corners end the loop.
+        if len(link_edges) == 3:
+            border = [e for e in others if len(e.link_faces) == 1]
+
+            if len(border) == 1:
+                return border[0]
+
+    elif face_count == 2:
+        # Regular interior vertex: four manifold edges, the loop continues on
+        # the one that does not share a face with the incoming edge.
+        if len(link_edges) == 4 and all(len(e.link_faces) == 2 for e in link_edges):
+            opposite = [e for e in others if not _share_face(edge, e)]
+
+            if len(opposite) == 1:
+                return opposite[0]
+
+    return None
+
+
+def edge_loop_edges(edge):
+    """All edges of the edge loop that contains `edge`, starting with `edge`."""
+    result = [edge]
+    seen = {edge}
+
+    for start_vert in edge.verts:
+        current = edge
+        vert = start_vert
+
+        while True:
+            next_edge = _next_loop_edge(current, vert)
+
+            if next_edge is None or next_edge in seen:
+                break
+
+            seen.add(next_edge)
+            result.append(next_edge)
+            vert = next_edge.other_vert(vert)
+            current = next_edge
+
+    return result
+
+
+def edge_ring_edges(edge):
+    """All edges of the edge ring that contains `edge`, starting with `edge`."""
+    result = [edge]
+    seen = {edge}
+
+    for start_face in edge.link_faces:
+        current_edge = edge
+        face = start_face
+
+        while True:
+            face_edges = list(face.edges)
+
+            # Rings only run through quads
+            if len(face_edges) != 4:
+                break
+
+            opposite = face_edges[(face_edges.index(current_edge) + 2) % 4]
+
+            if opposite in seen:
+                break
+
+            seen.add(opposite)
+            result.append(opposite)
+
+            next_faces = [f for f in opposite.link_faces if f != face]
+
+            if len(next_faces) != 1:
+                break
+
+            current_edge = opposite
+            face = next_faces[0]
+
+    return result
+
+
+def loop_multi_select(ring=False):
+    """
+    Replacement for the removed loop_multi_select operator: every selected edge
+    is expanded to the edge loop (or edge ring) it belongs to.
+    """
+    bm = itools.get_bmesh()
+    walk = edge_ring_edges if ring else edge_loop_edges
+
+    selected_edges = [edge for edge in bm.edges if edge.select]
+    new_edges = []
+
+    for edge in selected_edges:
+        new_edges += walk(edge)
+
+    for edge in new_edges:
+        edge.select = True
+
+    # Same flush the operator did, so verts / faces follow the edge selection
+    bm.select_flush_mode()
+
+
+def select_face_loops(ring=False):
+    loop_multi_select(ring=ring)
 
     itools.set_mode('EDGE')
     bpy.ops.mesh.select_more()
@@ -26,11 +150,7 @@ def select_vert_loops(ring=False):
     edges = [edge.index for edge in bm.verts[vert[0]].link_edges]
     itools.select(edges, 'EDGE', item=False)
 
-    if ring:
-        bpy.ops.mesh.loop_multi_select(ring=True)
-
-    else:
-        bpy.ops.mesh.loop_multi_select(ring=False)
+    loop_multi_select(ring=ring)
 
 
 def distance_between_elements(elements, mode, ring=False):
@@ -59,7 +179,7 @@ def organize_elements_by_loop(elements, mode, ring=False):
         if mode == 'VERT':
             select_vert_loops(ring=ring)
         elif mode == 'EDGE':
-            bpy.ops.mesh.loop_multi_select(ring=ring)
+            loop_multi_select(ring=ring)
         elif mode == 'FACE':
             select_face_loops(ring=ring)
 
@@ -120,6 +240,9 @@ def complete_step_selection(mode):
 def smart_loop(ring=False):
     final_selection = []
     mode = itools.get_mode()
+
+    # Element indices are what the selection helpers pass around
+    itools.refresh_tables()
     selection = itools.get_selected(mode, item=False)
     organized_loops = organize_elements_by_loop(selection, mode, ring)
 
@@ -143,16 +266,17 @@ def smart_loop(ring=False):
 
             elif distance == 0:
                 itools.select(loop, mode, item=False, replace=True, add_to_history=True)
-                bpy.ops.mesh.loop_multi_select(ring=ring)
+                loop_multi_select(ring=ring)
 
         else:
             if mode == 'EDGE':
                 itools.select(loop, mode, item=False, replace=True, add_to_history=True)
-                bpy.ops.mesh.loop_multi_select(ring=ring)
+                loop_multi_select(ring=ring)
 
         final_selection += itools.get_selected(mode, item=False)
 
     itools.select(final_selection, mode, item=False, replace=True, add_to_history=True)
+    itools.refresh_view()
 
 
 def show_message(message="", title="Message Box", icon='INFO'):
